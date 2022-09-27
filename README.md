@@ -1,5 +1,9 @@
 # blueink-client-python-examples
-Examples for using the [BlueInk Python module](https://github.com/blueinkhq/blueink-client-python)
+This repo should provide some practical examples for getting started with the 
+[BlueInk Python module](https://github.com/blueinkhq/blueink-client-python); in particular interacting with the Client,
+using the BundleHelper and PersonHelper to build Bundles and Persons respectfully.
+
+Currently, these examples are built and tested to blueink-client-python v0.9.3
 
 ## Usage
 ### Requisite Python Packages
