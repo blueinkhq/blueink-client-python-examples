@@ -106,6 +106,10 @@ class ClientPersonExample(BaseExample, PersonExampleModel):
     )
 
     def __init__(self, client: Client):
+        """ CLI UI Controller for Person Example.
+
+        For network calls / interactions with the PersonHelper, see above PersonExampleModel
+        """
         BaseExample.__init__(self)
         PersonExampleModel.__init__(self, client)
 
