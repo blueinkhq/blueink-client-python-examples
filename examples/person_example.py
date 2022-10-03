@@ -272,7 +272,7 @@ class ClientPersonExample(BaseExample, PersonExampleModel):
                 if not any_further_changes:
                     break
 
-        self.call_update_person(person, data)
+        self.call_update_person(update_id, new_data)
         self.main_router()
 
     def print_person(self, person_helper: PersonHelper):
