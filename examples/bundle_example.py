@@ -70,6 +70,24 @@ class BundleExampleModel:
             print(f"  - Bundle {bundle.id}: {bundle.label};"
                   f" status: {bundle.status}")
 
+    def call_list_templates(self, print_templates: bool = True):
+        """Demonstration of listing of document templates. Non-paginated.
+        """
+        resp = self._client.templates.list()
+
+        if resp.status == 200:
+            print(f"Total Templates: {len(resp.data)}")
+        else:
+            print(f"Failed to get Templates... Response Code: {resp.status}: {resp.data}")
+
+        if print_templates:
+            for template in resp.data:
+                print(f"  - Template {template.id}: {template.name}")
+                for role in template.roles:
+                    print(f"     o Role: {role}")
+
+        return resp.data
+
     def call_send_bundle(self, helper: BundleHelper):
         """
         """
@@ -101,9 +119,6 @@ class BundleExampleModel:
     def helper_add_document_filepath(self, helper: BundleHelper, path: str):
         return helper.add_document_by_path(path)
 
-    def helper_add_document_template(self, helper: BundleHelper, template_id: str):
-        return helper.add_document_template(template_id)
-
     def helper_add_field(self, helper: BundleHelper, doc_key, x, y, w, h, p, kind, label, assigned_editors):
         return helper.add_field(doc_key, x, y, w, h, p, kind,
                                 label=label,
@@ -120,12 +135,12 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
         prn="Print Bundle JSON",
         sen="Send Bundle",
         lba="List all Bundles",
-        lbf="List Bundles, filtered"
+        lbf="List Bundles, filtered",
+        lta="List all Templates",
     )
     DOC_CHOICES = Munch(
         file="Add Document by File Path",
         url="Add Document by URL",
-        temp="Add Document by Template UUID",
     )
     DELIVERY_CHOICES = Munch(
         em="email",
@@ -147,6 +162,7 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
         self.bundle_helper: BundleHelper = None
 
         self.doc_keys = set()
+        self.template_keys = set()
         self.signer_keys = set()
         self.field_keys = set()
 
@@ -198,6 +214,12 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
             self.list_all_bundles()
         elif choice == self.MAIN_CHOICES.lbf:
             self.list_filtered_bundles()
+        elif choice == self.MAIN_CHOICES.lta:
+            self.list_all_templates()
+
+    def list_all_templates(self):
+        self.call_list_templates(print_templates=True)
+        self.main_router()
 
     def list_all_bundles(self):
         choice = input_choices("~~List all Bundles~~",
@@ -225,11 +247,17 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
 
     def summary(self):
         print("Documents Added:")
-        for key in list(self.doc_keys):
+        for key in list(self.doc_keys.difference(self.template_keys)):
             print(key)
+
+        print("Templates Added:")
+        for key in list(self.template_keys):
+            print(key)
+
         print("Signers Added:")
         for key in list(self.signer_keys):
             print(key)
+
         print("Fields Added to all Docs:")
         for key in list(self.field_keys):
             print(key)
@@ -309,10 +337,6 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
             file_path = interactive_text_input("Path to PDF", allow_blank=False)
             doc_key = self.helper_add_document_filepath(self.bundle_helper, file_path)
 
-        elif choice == self.DOC_CHOICES.temp:
-            template_uuid = interactive_text_input("Template UUID", allow_blank=False)
-            doc_key = self.helper_add_document_template(self.bundle_helper, template_uuid)
-
         self.doc_keys.add(doc_key)
 
         print("Document Added!")
@@ -323,8 +347,8 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
             print("** Bundle not yet configured. Please pick option 1**")
             self.main_router()
 
-        if len(self.doc_keys) == 0:
-            print("** Documents not yet added. Please add one or more documents **")
+        if len(self.doc_keys.difference(self.template_keys)) == 0:
+            print("** non-template documents not yet added. Please add one or more documents via URL or path **")
             self.main_router()
 
         if len(self.signer_keys) == 0:
@@ -332,14 +356,14 @@ class ClientBundleExample(BaseExample, BundleExampleModel):
             self.main_router()
 
         print("~~Add a Field~~")
-        ordered_doc_keys = list(self.doc_keys)
+        ordered_doc_keys = list(self.doc_keys.difference(self.template_keys))
         doc_key = input_choices("Which Document should this field go onto?",
                                 "Your Selection",
                                 ordered_doc_keys,
                                 1
                                 )
         kind = input_choices(
-            "Field Type\n(Inexaustive, see documentation for more kinds)",
+            "Field Type\n(not exaustive, see documentation for more kinds)",
             "Your Selection",
             ["inp", "ini", "txt", "cbx", "sdt"],
             1
