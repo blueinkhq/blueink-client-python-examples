@@ -1,13 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List
 from munch import Munch
-from blueink import Client
 
 
 class BaseExample(ABC):
-    def __init__(self, client: Client):
-        self.client = client
-
     @abstractmethod
     def start(self):
         """ Start example script

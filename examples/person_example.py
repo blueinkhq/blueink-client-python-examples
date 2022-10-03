@@ -1,6 +1,7 @@
 import copy
 from pprint import pprint
 from random import choice as random_choice
+from typing import List
 
 from munch import Munch
 from requests import HTTPError
@@ -16,7 +17,82 @@ FNAMES = ["HOMER", "MARGE", "LISA", "BART", "MOE", "FRED", "GORDON", "BARNEY", "
 LNAMES = ["SIMPSON", "FLANDERS", "FREEMAN", "CALHOUN", "VANCE"]
 
 
-class ClientPersonExample(BaseExample):
+class PersonExampleModel:
+    def __init__(self, client: Client):
+        """ Examples of using PersonHelper and some simple calls to retrieve/update/list Persons using the Client.
+        """
+        self._client = client
+
+    def setup_person_helper(self, name: str, phones: List[str], emails: List[str], metadata=None):
+        """ One-liner example of setting up PersonHelper
+        """
+        if metadata:
+            return PersonHelper(name=name, metadata=metadata, phones=phones, emails=emails)
+        else:
+            return PersonHelper(name=name, phones=phones, emails=emails)
+
+    def call_create_person(self, helper: PersonHelper):
+        """Example network call to create a person via PersonHelper
+        """
+        try:
+            response = self._client.persons.create_from_person_helper(helper)
+            print(response.data)
+        except HTTPError as e:
+            print(f"Failed to create person, HTTP {e.errno}: {e.response.content}")
+        print("Example Concluded. To create a new Person, start the example script again.")
+        exit()
+
+    def call_list_persons(self, show_metadata: bool, print_people_data=True):
+        """Example call to list out Person data.
+
+        Returns:
+             collection of persons
+        """
+        resp = self._client.persons.list()
+        if resp.status == 200:
+            print(f"Total Persons: {len(resp.data)}")
+        else:
+            print(f"Response error: HTTP {resp.status}")
+            return []
+
+        if print_people_data:
+            for person in resp.data:
+                print(f"  - Person {person.id}: {person.name}")
+                if show_metadata:
+                    print(f"     meta:")
+                    pprint(person.metadata)
+
+        return resp.data
+
+    def call_delete_person(self, person_id: str) -> bool:
+        """Example call to delete a person by ID number
+        """
+        try:
+            first_del_res = self._client.persons.delete(person_id)
+            print(f"Successfully deleted person: {person_id}")
+            return True
+        except HTTPError as e:
+            print(f"Failed to delete person with ID == {person_id}, "
+                  f" HTTP {e.errno}: {e.response.content}")
+            return False
+
+    def call_update_person(self, person_id, data):
+        """Example call to update a Person
+        """
+        try:
+            response = self._client.persons.update(person_id=person_id,
+                                                   data=data,
+                                                   partial=True)
+            print(f"Successfully updated person with id {person_id}")
+
+            print(response.data)
+
+        except HTTPError as e:
+            print(f"Failed to update person with ID {person_id}, "
+                  f" HTTP {e.errno}: {e.response.content}")
+
+
+class ClientPersonExample(BaseExample, PersonExampleModel):
     MAIN_CHOICES = Munch(
         crt="Create a Person",
         lst="List Persons",
@@ -30,7 +106,8 @@ class ClientPersonExample(BaseExample):
     )
 
     def __init__(self, client: Client):
-        self.client = client
+        BaseExample.__init__(self)
+        PersonExampleModel.__init__(self, client)
 
     def start(self):
         print("BlueInk API Client Example: Person Helper")
@@ -68,7 +145,7 @@ class ClientPersonExample(BaseExample):
         if choice == self.TERMINAL_CHOICES.prt:
             self.print_person(person_helper)
         elif choice == self.TERMINAL_CHOICES.snd:
-            self._create_person(person_helper)
+            self.call_create_person(person_helper)
         elif choice == self.TERMINAL_CHOICES.ext:
             self.main_router()
 
@@ -91,45 +168,28 @@ class ClientPersonExample(BaseExample):
             emails = []
 
         add_metadata = interactive_yes_no_input("Add metadata?")
+        metadata = None
         if add_metadata:
-            md = interactive_dict_entry("Metadata Key",
-                                        "Add more Metadata?",
-                                        "key")
-            ph = PersonHelper(name=name, metadata=md, phones=phones, emails=emails)
-        else:
-            ph = PersonHelper(name=name, phones=phones, emails=emails)
+            metadata = interactive_dict_entry("Metadata Key",
+                                              "Add more Metadata?",
+                                              "key")
+        ph = self.setup_person_helper(name, phones, emails, metadata=metadata)
 
         self.person_menu(ph)
 
     def list_persons(self):
         show_metadata = interactive_yes_no_input("Show Metadata?")
-
-        resp = self.client.persons.list()
-        print(f"Response Code: {resp.status}")
-        if resp.status == 200:
-            print(f"Total Persons: {len(resp.data)}")
-        else:
-            print(f"Response error: HTTP {resp.status}")
-            self.main_router()
-
-        for person in resp.data:
-            print(f"  - Person {person.id}: {person.name}")
-            if show_metadata:
-                print(f"     meta:")
-                pprint(person.metadata)
+        self.call_list_persons(show_metadata)
         self.main_router()
 
     def delete_person(self):
-        list_resp = self.client.persons.list()
-        print(f"Fetch List Response Code: {list_resp.status}")
-        if list_resp.status == 200:
-            print(f"Total Persons: {len(list_resp.data)}")
-        else:
-            print(f"Response error: HTTP {list_resp.status}")
+        persons = self.call_list_persons(False, False)
+        if len(persons) == 0:
+            print("No Persons found. Returning to main menu")
             self.main_router()
 
         people_by_id = {}
-        for person in list_resp.data:
+        for person in persons:
             people_by_id[person.id] = (person.id, person.name)
 
         first_delete = input_choices("Delete Person",
@@ -140,51 +200,37 @@ class ClientPersonExample(BaseExample):
         first_name = first_delete[1]
         print(f"Attempting to delete '{first_name}' by ID '{first_id}'")
 
-        try:
-            first_del_res = self.client.persons.delete(first_id)
-            print(f"Successfully deleted person '{first_name}': {first_del_res.data}")
+        if self.call_delete_person(first_id):
             people_by_id.pop(first_id)
-        except HTTPError as e:
-            print(f"Failed to delete person with ID {first_id} ({first_name}), "
-                  f" HTTP {e.errno}: {e.response.content}")
 
         while interactive_yes_no_input("Delete more Persons", "n"):
             another_delete = input_choices("Delete Person",
-                                         "Which Person",
-                                         people_by_id,
-                                         default=1)
+                                           "Which Person",
+                                           people_by_id,
+                                           default=1)
 
             another_id = another_delete[0]
-            another_name = another_delete[1]
-            try:
-                another_del_res = self.client.persons.delete(another_id)
-                print(f"Successfully deleted person '{another_name}': {another_del_res.data}")
-                people_by_id.pop(another_id)
-            except HTTPError as e:
-                print(f"Failed to delete person with ID {another_id} ({another_name}), "
-                      f" HTTP {e.errno}: {e.response.content}")
+            if self.call_delete_person(another_id):
+                people_by_id.pop(first_id)
 
         self.main_router()
 
     def update_person(self):
-        list_resp = self.client.persons.list()
-        print(f"Fetch List Response Code: {list_resp.status}")
-        if list_resp.status == 200:
-            print(f"Total Persons: {len(list_resp.data)}")
-        else:
-            print(f"Response error: HTTP {list_resp.status}")
+        persons = self.call_list_persons(False, False)
+        if len(persons) == 0:
+            print("No Persons found. Returning to main menu")
             self.main_router()
 
         person_name_by_id = {}
         person_data_by_id = {}
-        for person in list_resp.data:
+        for person in persons:
             person_name_by_id[person.id] = (person.id, person.name)
             person_data_by_id[person.id] = person
 
         choice = input_choices("Update Person",
-                                     "Which Person",
-                                     person_name_by_id,
-                                     default=1)
+                               "Which Person",
+                               person_name_by_id,
+                               default=1)
         update_id = choice[0]
         update_name = choice[0]
         data = copy.deepcopy(person_data_by_id[update_id])
@@ -226,9 +272,8 @@ class ClientPersonExample(BaseExample):
                 if not any_further_changes:
                     break
 
-        self._update_person(update_id, data=new_data)
-
-
+        self.call_update_person(person, data)
+        self.main_router()
 
     def print_person(self, person_helper: PersonHelper):
         if person_helper is None:
@@ -237,42 +282,3 @@ class ClientPersonExample(BaseExample):
 
         pprint(person_helper.as_dict())
         self.person_menu(person_helper)
-
-    def _update_person(self, person_id, data):
-        try:
-            response = self.client.persons.update(person_id=person_id,
-                                                  data=data,
-                                                  partial=True)
-            print(f"Successfully updated person with id {person_id}")
-
-            see_data = interactive_yes_no_input(
-                "Would you like to see the returned data?")
-            if see_data:
-                print(response.data)
-
-        except HTTPError as e:
-            print(f"Failed to update person with ID {person_id}, "
-                  f" HTTP {e.errno}: {e.response.content}")
-
-        self.main_router()
-
-    def _create_person(self, person_helper: PersonHelper):
-        if person_helper is None:
-            print("** Person not yet configured. Please build a person**")
-            self.main_router()
-
-        try:
-            response = self.client.persons.create_from_person_helper(person_helper)
-            see_data = interactive_yes_no_input("Would you like to see the returned data?")
-            if see_data:
-                print(response.data)
-
-            print(
-                "Example Concluded. To create a new Person, start the example script again.")
-            exit()
-        except HTTPError as e:
-            print(f"Failed to create person, HTTP {e.errno}: {e.response.content}")
-            print("Returning to main menu")
-            self.main_router()
-
-

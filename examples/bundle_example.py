@@ -16,7 +16,101 @@ FNAMES = ["HOMER", "MARGE", "LISA", "BART", "MOE", "FRED", "GORDON", "BARNEY", "
 LNAMES = ["SIMPSON", "FLANDERS", "FREEMAN", "CALHOUN", "VANCE"]
 
 
-class ClientBundleExample(BaseExample):
+class BundleExampleModel:
+    def __init__(self, client: Client):
+        """ Examples of using BundleHelper and some simple calls to list Bundles using the Client.
+        """
+        self._client = client
+
+    def call_list_bundles(self):
+        """Demonstration of listing of bundles. Non-paginated.
+        """
+        resp = self._client.bundles.list()
+
+        if resp.status == 200:
+            print(f"Total Bundles: {len(resp.data)}")
+        else:
+            print(f"Response Code: {resp.status}: {resp.data}")
+
+        for bundle in resp.data:
+            print(f"  - Bundle {bundle.id}: {bundle.label};"
+                  f" status: {bundle.status}")
+
+    def call_list_bundles_paginated(self):
+        """Demonstration of using paginated calls to list Bundles.
+        """
+        print(f"A paginated call to '{BUNDLE_ENDPOINTS.LIST}', 5 per page...")
+        iterator = self._client.bundles.paged_list(per_page=5)
+
+        for resp in iterator:
+            print(f"Page {resp.pagination.page_number} of {resp.pagination.total_pages}:")
+            for bundle in resp.data:
+                print(f"  - Bundle {bundle.id}: {bundle.label};"
+                      f" status: {bundle.status}")
+
+            last_page = resp.pagination.page_number == resp.pagination.total_pages
+            keep_going = False if last_page else interactive_yes_no_input(
+                "Next Page",
+                default="y")
+
+            if not keep_going:
+                break
+
+    def call_list_bundles_filtered(self, status):
+        """Demonstration of listing of Bundles, using a query parameter.
+        """
+        # Also note, singular status can be queried as well:
+        resp = self._client.bundles.list(status=status)
+        print(f"Response Code: {resp.status}")
+
+        if resp.status == 200:
+            print(f"Total Bundles with status '{status}': {len(resp.data)}")
+
+        for bundle in resp.data:
+            print(f"  - Bundle {bundle.id}: {bundle.label};"
+                  f" status: {bundle.status}")
+
+    def call_send_bundle(self, helper: BundleHelper):
+        """
+        """
+        try:
+            response = self._client.bundles.create_from_bundle_helper(helper)
+            print(f"Successfully sent bundle '{response.data['label']}'")
+            print(response.data)
+        except HTTPError as e:
+            print(f"Response Status: {e.errno}: {e.response.content}")
+
+    def helper_setup(self, label: str, email_subject: str, email_message: str) -> BundleHelper:
+        helper = BundleHelper(label=label,
+                              email_subject=email_subject,
+                              email_message=email_message,
+                              is_test=True)
+        return helper
+
+    def helper_add_signer(self, key, name, email, phone, deliver_via) -> str:
+        packet_key = self.bundle_helper.add_signer(key=key,
+                                                   name=name,
+                                                   email=email,
+                                                   phone=phone,
+                                                   deliver_via=deliver_via)
+        return packet_key
+
+    def helper_add_document_url(self, helper: BundleHelper, url: str):
+        return helper.add_document_by_url(url)
+
+    def helper_add_document_filepath(self, helper: BundleHelper, path: str):
+        return helper.add_document_by_path(path)
+
+    def helper_add_document_template(self, helper: BundleHelper, template_id: str):
+        return helper.add_document_template(template_id)
+
+    def helper_add_field(self, helper: BundleHelper, doc_key, x, y, w, h, p, kind, label, assigned_editors):
+        return helper.add_field(doc_key, x, y, w, h, p, kind,
+                                label=label,
+                                editors=assigned_editors)
+
+
+class ClientBundleExample(BaseExample, BundleExampleModel):
     MAIN_CHOICES = Munch(
         bdl="Setup a Bundle",
         doc="Add a Document",
@@ -43,7 +137,13 @@ class ClientBundleExample(BaseExample):
     )
 
     def __init__(self, client: Client):
-        self.client = client
+        """ CLI UI Controller for Bundle Example.
+
+        For network calls / interactions with the Bundle Helper, see above BundleExampleModel
+        """
+        BaseExample.__init__(self)
+        BundleExampleModel.__init__(self, client)
+
         self.bundle_helper: BundleHelper = None
 
         self.doc_keys = set()
@@ -105,33 +205,9 @@ class ClientBundleExample(BaseExample):
                                self.LIST_CHOICES.values(),
                                1)
         if choice == self.LIST_CHOICES.reg:
-            print(f"A regular call to '{BUNDLE_ENDPOINTS.LIST}'...")
-            resp = self.client.bundles.list()
-            print(f"Response Code: {resp.status}")
-
-            if resp.status == 200:
-                print(f"Total Bundles: {len(resp.data)}")
-
-            for bundle in resp.data:
-                print(f"  - Bundle {bundle.id}: {bundle.label};"
-                      f" status: {bundle.status}")
+            self.call_list_bundles()
         else:
-            print(f"A paginated call to '{BUNDLE_ENDPOINTS.LIST}', 5 per page...")
-            iterator = self.client.bundles.paged_list(per_page=5)
-
-            for resp in iterator:
-                print(f"Page {resp.pagination.page_number} of {resp.pagination.total_pages}:")
-                for bundle in resp.data:
-                    print(f"  - Bundle {bundle.id}: {bundle.label};"
-                          f" status: {bundle.status}")
-
-                last_page = resp.pagination.page_number == resp.pagination.total_pages
-                keep_going = False if last_page else interactive_yes_no_input(
-                    "Next Page",
-                    default="y")
-
-                if not keep_going:
-                    break
+            self.call_list_bundles_paginated()
 
         self.main_router()
 
@@ -143,16 +219,7 @@ class ClientBundleExample(BaseExample):
                                1
                                )
 
-        # Also note, singular status can be queried as well:
-        resp = self.client.bundles.list(status=status)
-        print(f"Response Code: {resp.status}")
-
-        if resp.status == 200:
-            print(f"Total Bundles with status '{status}': {len(resp.data)}")
-
-        for bundle in resp.data:
-            print(f"  - Bundle {bundle.id}: {bundle.label};"
-                  f" status: {bundle.status}")
+        self.call_list_bundles_filtered(status)
 
         self.main_router()
 
@@ -179,10 +246,8 @@ class ClientBundleExample(BaseExample):
         email_subject = interactive_text_input("Email Subject", allow_blank=True)
         email_message = interactive_text_input("Email Message", allow_blank=True)
 
-        self.bundle_helper = BundleHelper(label=label,
-                                          email_subject=email_subject,
-                                          email_message=email_message,
-                                          is_test=True)
+        self.bundle_helper = self.helper_setup(label, email_subject, email_message)
+
         print("Bundle Configured!")
         self.main_router()
 
@@ -215,11 +280,8 @@ class ClientBundleExample(BaseExample):
                                        require_phone
                                        )
 
-        packet_key = self.bundle_helper.add_signer(key=key,
-                                      name=name,
-                                      email=email,
-                                      phone=phone,
-                                      deliver_via=deliver_via)
+        packet_key = self.helper_add_signer(key, name, email, phone, deliver_via)
+
         self.signer_keys.add(packet_key)
 
         print("Signer Added!")
@@ -241,15 +303,15 @@ class ClientBundleExample(BaseExample):
             file_url = interactive_text_input("URL to PDF",
                                               default="https://www.irs.gov/pub/irs-pdf/fw4.pdf",
                                               allow_blank=False)
-            doc_key = self.bundle_helper.add_document_by_url(file_url)
+            doc_key = self.helper_add_document_url(self.bundle_helper, file_url)
 
         elif choice == self.DOC_CHOICES.file:
             file_path = interactive_text_input("Path to PDF", allow_blank=False)
-            doc_key = self.bundle_helper.add_document_by_path(file_path)
+            doc_key = self.helper_add_document_filepath(self.bundle_helper, file_path)
 
         elif choice == self.DOC_CHOICES.temp:
             template_uuid = interactive_text_input("Template UUID", allow_blank=False)
-            doc_key = self.bundle_helper.add_document_template(template_uuid)
+            doc_key = self.helper_add_document_template(self.bundle_helper, template_uuid)
 
         self.doc_keys.add(doc_key)
 
@@ -307,9 +369,9 @@ class ClientBundleExample(BaseExample):
             assigned_editors.add(additional_editor)
             editor_choices.remove(additional_editor)
 
-        key = self.bundle_helper.add_field(doc_key, x, y, w, h, p, kind,
-                                     label=label,
-                                     editors=assigned_editors)
+        key = self.helper_add_field(self.bundle_helper, doc_key, x, y, w, h, p, kind,
+                                    label=label,
+                                    assigned_editors=assigned_editors)
         self.field_keys.add(key)
 
         print("Field Added!")
@@ -329,15 +391,7 @@ class ClientBundleExample(BaseExample):
             print("** Bundle not yet configured. Please pick option 1**")
             self.main_router()
 
-        try:
-            response = self.client.bundles.create_from_bundle_helper(self.bundle_helper)
-            print(f"Successfully sent bundle '{response.data['label']}'")
-        except HTTPError as e:
-            print(f"Response Status: {e.errno}: {e.response.content}")
-
-        see_data = interactive_yes_no_input("Would you like to see the returned data?")
-        if see_data:
-            print(response.data)
+        self.call_send_bundle(self.bundle_helper)
 
         print("Example Concluded. To create a new bundle, start the example script again.")
         exit()
